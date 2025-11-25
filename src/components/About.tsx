@@ -199,7 +199,7 @@ const About = () => {
                     />
                   ) : (
                     <img
-                      src="/assets/anshika-toon.png"
+                      src="/anshika-toon.png"
                       alt="Anshika Mishra - Graphic Designer"
                       className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                     />
