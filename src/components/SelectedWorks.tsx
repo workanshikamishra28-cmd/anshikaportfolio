@@ -5,12 +5,13 @@ import type { SelectedWork } from "@/types/sanity";
 import { FloatingShapes } from "./StorytellingAnimations";
 
 const SelectedWorks: React.FC = () => {
-  const [cardPositions, setCardPositions] = useState<number[]>([]);
   const [works, setWorks] = useState<SelectedWork[]>([]);
   const [loading, setLoading] = useState(true);
   const [isVisible, setIsVisible] = useState(false);
-  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const sectionRef = useRef<HTMLElement>(null);
+  const autoPlayRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     // Fetch selected works from Sanity
@@ -50,52 +51,46 @@ const SelectedWorks: React.FC = () => {
     };
   }, []);
 
+  // Auto-play carousel
   useEffect(() => {
-    const handleScroll = () => {
-      if (!sectionRef.current) return;
-      
-      const sectionRect = sectionRef.current.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      
-      const newPositions = cardRefs.current.map((card, index) => {
-        if (!card || index === 0) return 0; // First card doesn't move
-        
-        const rect = card.getBoundingClientRect();
-        const cardTop = rect.top;
-        
-        // Calculate when this card should start stacking
-        // Each card starts stacking when it reaches its designated position
-        const stackPosition = 100 + (index * 60); // Stack position for this card
-        
-        if (cardTop <= stackPosition) {
-          // Card should be stacked
-          return 1; // Fully stacked
-        }
-        
-        // Calculate progress towards stacking (for smooth animation)
-        const distanceToStack = cardTop - stackPosition;
-        const animationDistance = 200; // Distance over which animation happens
-        
-        if (distanceToStack < animationDistance) {
-          return 1 - (distanceToStack / animationDistance);
-        }
-        
-        return 0; // Not yet stacking
-      });
-      
-      setCardPositions(newPositions);
-    };
+    if (works.length <= 1) return;
 
-    window.addEventListener('scroll', handleScroll);
-    handleScroll(); // Initial call
-    
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [works.length]);
+    autoPlayRef.current = setInterval(() => {
+      nextSlide();
+    }, 5000);
+
+    return () => {
+      if (autoPlayRef.current) {
+        clearInterval(autoPlayRef.current);
+      }
+    };
+  }, [works.length, currentIndex]);
+
+  const nextSlide = () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => (prev + 1) % works.length);
+    setTimeout(() => setIsTransitioning(false), 600);
+  };
+
+  const prevSlide = () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
+    setCurrentIndex((prev) => (prev - 1 + works.length) % works.length);
+    setTimeout(() => setIsTransitioning(false), 600);
+  };
+
+  const goToSlide = (index: number) => {
+    if (isTransitioning || index === currentIndex) return;
+    setIsTransitioning(true);
+    setCurrentIndex(index);
+    setTimeout(() => setIsTransitioning(false), 600);
+  };
 
   return (
     <section 
       ref={sectionRef}
-      className="relative py-12 md:py-20 lg:py-32 px-4 md:px-6 lg:px-12 bg-gradient-to-br from-[#5c1a1a] via-[#78201B] to-[#3d0f0d] overflow-hidden"
+      className="relative py-16 md:py-24 px-4 md:px-6 lg:px-12 bg-gradient-to-br from-[#5c1a1a] via-[#78201B] to-[#3d0f0d] overflow-hidden"
     >
       {/* Animated background elements */}
       <FloatingShapes count={8} className="opacity-15" />
@@ -123,9 +118,9 @@ const SelectedWorks: React.FC = () => {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto relative z-10 mt-12 md:mt-16 lg:mt-20">
+      <div className="max-w-7xl mx-auto relative z-10 mt-12 md:mt-16">
         {/* Section header with animations */}
-        <div className={`mb-10 md:mb-16 text-center transition-all duration-[800ms] ease-out ${
+        <div className={`mb-8 md:mb-12 text-center transition-all duration-[800ms] ease-out ${
           isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
         }`}>
           <h2 className="text-3xl md:text-5xl lg:text-7xl font-bold text-[#F8EDEA] mb-3 md:mb-4">
@@ -158,112 +153,165 @@ const SelectedWorks: React.FC = () => {
 
         {loading ? (
           <div className="flex justify-center items-center py-12 md:py-20">
-            <div className="text-[#F8EDEA] text-lg md:text-2xl">Loading works...</div>
+            <div className="text-[#F8EDEA] text-lg md:text-2xl animate-pulse">Loading works...</div>
           </div>
         ) : (
-          /* Stacked cards with stacking animation */
-          <div className="relative" style={{ minHeight: `${works.length * (window.innerWidth < 768 ? 700 : 1000)}px` }}>
-            {works.map((work, index) => {
-            const stackProgress = cardPositions[index] || 0;
-            const isMobile = window.innerWidth < 768;
-            const scale = 1 - (index * (isMobile ? 0.02 : 0.03) * (1 - stackProgress)); // Scale changes as it stacks
-            const zIndex = works.length - index;
-            const stackOffset = index * (isMobile ? 40 : 60); // Vertical offset when stacked
-            
-            // Calculate position: starts below, moves up to stack position
-            const topPosition = index === 0 
-              ? (isMobile ? 60 : 100) // First card stays at fixed position
-              : (isMobile ? 60 : 100) + stackOffset + ((1 - stackProgress) * (isMobile ? 400 : 600)); // Others slide up
-            
-            return (
-              <div
-                key={work._id}
-                ref={(el) => (cardRefs.current[index] = el)}
-                className="sticky w-full transition-all duration-300 ease-out"
-                style={{
-                  top: `${topPosition}px`,
-                  zIndex,
-                  marginBottom: index < works.length - 1 ? (isMobile ? '500px' : '800px') : '0',
-                }}
-              >
-                <div 
-                  className="group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl md:hover:shadow-3xl transition-all duration-500 md:hover:scale-[1.02] mx-auto relative"
-                  style={{ 
-                    backgroundColor: work.backgroundColor,
-                    transform: `scale(${scale})`,
-                    maxWidth: '1200px',
-                  }}
-                >
-                  {/* Shimmer effect on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] md:group-hover:translate-x-[100%] transition-transform duration-1000 ease-out z-10 pointer-events-none" />
+          /* Carousel Container */
+          <div className="relative">
+            {/* Carousel Wrapper */}
+            <div className="relative overflow-hidden rounded-2xl md:rounded-3xl">
+              {/* Slides */}
+              <div className="relative" style={{ minHeight: '500px' }}>
+                {works.map((work, index) => {
+                  const isActive = index === currentIndex;
+                  const isPrev = index === (currentIndex - 1 + works.length) % works.length;
+                  const isNext = index === (currentIndex + 1) % works.length;
                   
-                  <div className="grid md:grid-cols-2 gap-0 min-h-[400px] md:min-h-[500px]">
-                    {/* Text content with enhanced animations */}
-                    <div className={`p-6 md:p-10 lg:p-16 flex flex-col justify-center relative z-20 ${
-                      work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981" 
-                        ? 'text-[#78201B]' 
-                        : 'text-[#F8EDEA]'
-                    }`}>
-                      <h3 className="text-2xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 leading-tight md:group-hover:scale-105 transition-transform duration-500 origin-left">
-                        {work.title}
-                      </h3>
-                      <p className={`text-sm md:text-xl mb-6 md:mb-8 leading-relaxed md:group-hover:translate-x-2 transition-transform duration-500 ${
-                        work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
-                          ? 'text-[#78201B]/80'
-                          : 'text-[#F8EDEA]/80'
-                      }`}>
-                        {work.description}
-                      </p>
-                      <button 
-                        className={`inline-flex items-center gap-2 md:gap-3 px-5 md:px-8 py-2.5 md:py-4 rounded-full font-bold text-sm md:text-lg transition-all duration-300 w-fit md:hover:scale-105 md:hover:gap-5 active:scale-95 relative overflow-hidden ${
-                          work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
-                            ? 'bg-[#78201B] text-[#F8EDEA] hover:bg-[#5c1a1a]'
-                            : 'bg-[#F8EDEA] text-[#78201B] hover:bg-white'
-                        }`}
+                  let transform = 'translateX(100%)';
+                  let opacity = 0;
+                  let zIndex = 0;
+                  
+                  if (isActive) {
+                    transform = 'translateX(0)';
+                    opacity = 1;
+                    zIndex = 10;
+                  } else if (isPrev) {
+                    transform = 'translateX(-100%)';
+                    opacity = 0;
+                    zIndex = 5;
+                  }
+                  
+                  return (
+                    <div
+                      key={work._id}
+                      className="absolute inset-0 transition-all duration-700 ease-out"
+                      style={{
+                        transform,
+                        opacity,
+                        zIndex,
+                      }}
+                    >
+                      <div 
+                        className="group rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl h-full"
+                        style={{ backgroundColor: work.backgroundColor }}
                       >
-                        <span className="relative z-10">View Project</span>
-                        <span className="text-lg md:text-2xl relative z-10 md:group-hover:translate-x-1 transition-transform duration-300">→</span>
-                      </button>
-                    </div>
-
-                    {/* Image with enhanced effects */}
-                    <div className="min-h-[250px] md:min-h-[400px] lg:min-h-0 bg-black/10 flex items-center justify-center p-6 md:p-10 lg:p-12 relative overflow-hidden">
-                      {work.image ? (
-                        <>
-                          <img
-                            src={urlFor(work.image).width(1200).url()}
-                            alt={work.image.alt || work.title}
-                            className="w-full h-full object-cover rounded-2xl group-hover:scale-110 group-hover:rotate-1 transition-all duration-700"
-                          />
-                          {/* Gradient overlay on hover */}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl m-10 md:m-12" />
-                        </>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm min-h-[350px] group-hover:bg-white/20 transition-colors duration-500">
-                          <div className="text-center">
-                            <div className={`text-8xl mb-6 group-hover:scale-110 group-hover:rotate-12 transition-all duration-500 ${
+                        <div className="grid md:grid-cols-2 gap-0 h-full min-h-[500px] md:min-h-[600px]">
+                          {/* Text content */}
+                          <div className={`p-8 md:p-12 lg:p-16 flex flex-col justify-center ${
+                            work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981" 
+                              ? 'text-[#78201B]' 
+                              : 'text-[#F8EDEA]'
+                          }`}>
+                            <h3 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 leading-tight">
+                              {work.title}
+                            </h3>
+                            <p className={`text-base md:text-xl mb-6 md:mb-8 leading-relaxed ${
                               work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
-                                ? 'text-[#78201B]/40 group-hover:text-[#78201B]/60'
-                                : 'text-[#F8EDEA]/40 group-hover:text-[#F8EDEA]/60'
+                                ? 'text-[#78201B]/80'
+                                : 'text-[#F8EDEA]/80'
                             }`}>
-                              {index % 4 === 0 ? '✦' : index % 4 === 1 ? '★' : index % 4 === 2 ? '◆' : '●'}
-                            </div>
-                            <p className={`text-lg transition-colors duration-500 ${
-                              work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
-                                ? 'text-[#78201B]/60 group-hover:text-[#78201B]/80'
-                                : 'text-[#F8EDEA]/60 group-hover:text-[#F8EDEA]/80'
-                            }`}>
-                              Project Preview
+                              {work.description}
                             </p>
+                            <button 
+                              className={`inline-flex items-center gap-3 px-6 md:px-8 py-3 md:py-4 rounded-full font-bold text-sm md:text-lg transition-all duration-300 w-fit hover:scale-105 hover:gap-5 active:scale-95 ${
+                                work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
+                                  ? 'bg-[#78201B] text-[#F8EDEA] hover:bg-[#5c1a1a]'
+                                  : 'bg-[#F8EDEA] text-[#78201B] hover:bg-white'
+                              }`}
+                            >
+                              <span>View Project</span>
+                              <span className="text-xl">→</span>
+                            </button>
+                          </div>
+
+                          {/* Image */}
+                          <div className="min-h-[300px] md:min-h-0 bg-black/10 flex items-center justify-center p-8 md:p-12 relative overflow-hidden">
+                            {work.image ? (
+                              <img
+                                src={urlFor(work.image).width(1200).url()}
+                                alt={work.image.alt || work.title}
+                                className="w-full h-full object-cover rounded-2xl"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm min-h-[350px]">
+                                <div className="text-center">
+                                  <div className={`text-8xl mb-6 ${
+                                    work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
+                                      ? 'text-[#78201B]/40'
+                                      : 'text-[#F8EDEA]/40'
+                                  }`}>
+                                    {index % 4 === 0 ? '✦' : index % 4 === 1 ? '★' : index % 4 === 2 ? '◆' : '●'}
+                                  </div>
+                                  <p className={`text-lg ${
+                                    work.backgroundColor === "#F8EDEA" || work.backgroundColor === "#10B981"
+                                      ? 'text-[#78201B]/60'
+                                      : 'text-[#F8EDEA]/60'
+                                  }`}>
+                                    Project Preview
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            );
-            })}
+            </div>
+
+            {/* Navigation Arrows */}
+            {works.length > 1 && (
+              <>
+                <button
+                  onClick={prevSlide}
+                  disabled={isTransitioning}
+                  className="absolute left-4 top-1/2 -translate-y-1/2 z-20 bg-[#F8EDEA]/90 hover:bg-[#F8EDEA] text-[#78201B] p-3 md:p-4 rounded-full shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Previous slide"
+                >
+                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={nextSlide}
+                  disabled={isTransitioning}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 z-20 bg-[#F8EDEA]/90 hover:bg-[#F8EDEA] text-[#78201B] p-3 md:p-4 rounded-full shadow-lg transition-all duration-300 hover:scale-110 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  aria-label="Next slide"
+                >
+                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </>
+            )}
+
+            {/* Dots Navigation */}
+            {works.length > 1 && (
+              <div className="flex justify-center gap-2 md:gap-3 mt-8">
+                {works.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => goToSlide(index)}
+                    disabled={isTransitioning}
+                    className={`transition-all duration-300 rounded-full ${
+                      index === currentIndex
+                        ? 'bg-[#D4A574] w-8 md:w-12 h-3 md:h-4'
+                        : 'bg-[#F8EDEA]/30 hover:bg-[#F8EDEA]/50 w-3 md:w-4 h-3 md:h-4'
+                    } disabled:cursor-not-allowed`}
+                    aria-label={`Go to slide ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Slide Counter */}
+            {works.length > 1 && (
+              <div className="text-center mt-4 text-[#F8EDEA]/60 text-sm md:text-base font-medium">
+                {currentIndex + 1} / {works.length}
+              </div>
+            )}
           </div>
         )}
       </div>
